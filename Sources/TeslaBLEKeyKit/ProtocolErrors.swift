@@ -1,4 +1,5 @@
 import Foundation
+import TeslaBLEKeyKitCore
 
 func protocolError(from message: UniversalMessage_RoutableMessage) -> Error? {
     let fault = message.signedMessageStatus.signedMessageFault

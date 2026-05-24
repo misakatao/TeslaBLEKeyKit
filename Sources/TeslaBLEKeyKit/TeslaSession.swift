@@ -1,11 +1,7 @@
 import Foundation
 import SwiftProtobuf
-
-enum AuthMethod: Sendable {
-    case none
-    case gcm
-    case hmac
-}
+import TeslaBLEKeyKitCore
+import TeslaBLEKeyKitCrypto
 
 final class TeslaSession {
     private static let labelSessionInfo = "session info"

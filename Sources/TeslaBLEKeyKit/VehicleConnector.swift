@@ -1,46 +1,17 @@
 import Foundation
-
-public protocol VehicleConnector: AnyObject {
-    var vin: String { get }
-    var retryInterval: TimeInterval { get }
-    var allowedLatency: TimeInterval { get }
-    var preferredAuthMethod: ConnectorAuthMethod { get }
-    
-    func receiveMessages() -> AsyncStream<Data>
-    func send(_ message: Data) async throws
-    func close()
-}
-
-public enum ConnectorAuthMethod: Sendable, Equatable {
-    case none
-    case aesGCM
-    case hmacSHA256
-}
-
-extension ConnectorAuthMethod {
-    var internalAuthMethod: AuthMethod {
-        switch self {
-        case .none:
-            return .none
-        case .aesGCM:
-            return .gcm
-        case .hmacSHA256:
-            return .hmac
-        }
-    }
-}
+import TeslaBLEKeyKitCore
 
 final class ResponseReceiver {
     let key: ReceiverKey
     let requestID: Data
     let sentAt: Date
     var antiReplay = SlidingWindow()
-    
+
     private let lock = NSLock()
     private var continuation: AsyncStream<UniversalMessage_RoutableMessage>.Continuation?
     private let stream: AsyncStream<UniversalMessage_RoutableMessage>
     private weak var dispatcher: TeslaDispatcher?
-    
+
     init(key: ReceiverKey, requestID: Data, dispatcher: TeslaDispatcher) {
         self.key = key
         self.requestID = requestID
@@ -52,17 +23,17 @@ final class ResponseReceiver {
         }
         self.continuation = localContinuation
     }
-    
+
     func messages() -> AsyncStream<UniversalMessage_RoutableMessage> {
         stream
     }
-    
+
     func yield(_ message: UniversalMessage_RoutableMessage) {
         lock.withLock {
             continuation?.yield(message)
         }
     }
-    
+
     func close() {
         dispatcher?.close(self)
         lock.withLock {
@@ -70,7 +41,7 @@ final class ResponseReceiver {
             continuation = nil
         }
     }
-    
+
     func expired(maxLatency: TimeInterval) -> Bool {
         Date().timeIntervalSince(sentAt) > maxLatency
     }

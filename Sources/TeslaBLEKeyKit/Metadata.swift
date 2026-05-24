@@ -1,4 +1,5 @@
 import Foundation
+import TeslaBLEKeyKitCore
 
 struct MetadataBuilder {
     enum Context {

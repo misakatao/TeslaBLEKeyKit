@@ -1,5 +1,7 @@
 import Foundation
 import SwiftProtobuf
+import TeslaBLEKeyKitCore
+import TeslaBLEKeyKitCrypto
 
 final class TeslaDispatcher {
     private static let addressLength = 16
