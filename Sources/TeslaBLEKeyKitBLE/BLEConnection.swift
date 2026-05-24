@@ -1,0 +1,289 @@
+@preconcurrency import CoreBluetooth
+import Foundation
+import TeslaBLEKeyKitCore
+
+public final class BLEConnection: NSObject, VehicleConnector, @unchecked Sendable {
+    public static let vehicleServiceUUID = CBUUID(string: "00000211-b2d1-43f0-9b88-960cebf8b91e")
+    public static let toVehicleCharacteristicUUID = CBUUID(string: "00000212-b2d1-43f0-9b88-960cebf8b91e")
+    public static let fromVehicleCharacteristicUUID = CBUUID(string: "00000213-b2d1-43f0-9b88-960cebf8b91e")
+
+    public let vin: String
+    public let retryInterval: TimeInterval
+    public let allowedLatency: TimeInterval
+    public let preferredAuthMethod: ConnectorAuthMethod = .aesGCM
+
+    private let queue = DispatchQueue(label: "TeslaBLEKeyKit.BLEConnection")
+    private var central: CBCentralManager?
+    private var targetLocalName: String
+    private var peripheral: CBPeripheral?
+    private var txCharacteristic: CBCharacteristic?
+    private var rxCharacteristic: CBCharacteristic?
+    private var connectContinuation: CheckedContinuation<Void, Error>?
+    private var writeContinuations: [CheckedContinuation<Void, Error>] = []
+    private var framer = BLEFramer()
+    private var blockLength = 20
+    private var receiveContinuation: AsyncStream<Data>.Continuation?
+    private var receiveStreamStorage: AsyncStream<Data>!
+
+    public init(
+        vin: String,
+        retryInterval: TimeInterval = 1,
+        allowedLatency: TimeInterval = 4
+    ) throws {
+        self.vin = vin
+        self.retryInterval = retryInterval
+        self.allowedLatency = allowedLatency
+        self.targetLocalName = try vehicleLocalName(forVIN: vin)
+        super.init()
+        self.receiveStreamStorage = AsyncStream { [weak self] continuation in
+            self?.queue.async {
+                self?.receiveContinuation = continuation
+            }
+        }
+    }
+
+    public func connect(timeout: TimeInterval = 20) async throws {
+        try await withTimeout(seconds: timeout) {
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                self.queue.async {
+                    self.connectContinuation = continuation
+                    if self.central == nil {
+                        self.central = CBCentralManager(delegate: self, queue: self.queue)
+                    } else if self.central?.state == .poweredOn {
+                        self.startScan()
+                    } else if let central = self.central {
+                        self.handleCentralState(central.state)
+                    }
+                }
+            }
+        }
+    }
+
+    public func receiveMessages() -> AsyncStream<Data> {
+        receiveStreamStorage
+    }
+
+    public func send(_ message: Data) async throws {
+        let framed = try BLEFramer.encode(message)
+        var chunks: [Data] = []
+        var offset = 0
+        while offset < framed.count {
+            let end = min(offset + blockLength, framed.count)
+            chunks.append(Data(framed[framed.index(framed.startIndex, offsetBy: offset)..<framed.index(framed.startIndex, offsetBy: end)]))
+            offset = end
+        }
+
+        for chunk in chunks {
+            try await write(chunk)
+        }
+    }
+
+    public func close() {
+        queue.async {
+            self.central?.stopScan()
+            if let peripheral = self.peripheral {
+                self.central?.cancelPeripheralConnection(peripheral)
+            }
+            self.receiveContinuation?.finish()
+            self.receiveContinuation = nil
+            self.resumeConnect(with: TeslaError.notConnected)
+            for continuation in self.writeContinuations {
+                continuation.resume(throwing: TeslaError.notConnected)
+            }
+            self.writeContinuations.removeAll()
+            self.peripheral = nil
+            self.txCharacteristic = nil
+            self.rxCharacteristic = nil
+        }
+    }
+
+    private func write(_ chunk: Data) async throws {
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+            queue.async {
+                guard let peripheral = self.peripheral, let tx = self.txCharacteristic else {
+                    continuation.resume(throwing: TeslaError.notConnected)
+                    return
+                }
+                self.writeContinuations.append(continuation)
+                peripheral.writeValue(chunk, for: tx, type: .withResponse)
+            }
+        }
+    }
+
+    private func startScan() {
+        central?.scanForPeripherals(
+            withServices: nil,
+            options: [CBCentralManagerScanOptionAllowDuplicatesKey: false]
+        )
+    }
+
+    private func handleCentralState(_ state: CBManagerState) {
+        switch state {
+        case .poweredOn:
+            startScan()
+        case .unauthorized:
+            resumeConnect(with: TeslaError.bluetoothUnauthorized)
+        case .poweredOff:
+            resumeConnect(with: TeslaError.bluetoothPoweredOff)
+        case .unsupported:
+            resumeConnect(with: TeslaError.bluetoothUnsupported)
+        case .resetting, .unknown:
+            break
+        @unknown default:
+            resumeConnect(with: TeslaError.bluetoothUnavailable)
+        }
+    }
+
+    private func resumeConnect() {
+        guard let continuation = connectContinuation else { return }
+        connectContinuation = nil
+        continuation.resume()
+    }
+
+    private func resumeConnect(with error: Error) {
+        guard let continuation = connectContinuation else { return }
+        connectContinuation = nil
+        continuation.resume(throwing: error)
+    }
+}
+
+extension BLEConnection: CBCentralManagerDelegate {
+    public func centralManagerDidUpdateState(_ central: CBCentralManager) {
+        queue.async {
+            self.handleCentralState(central.state)
+        }
+    }
+
+    public func centralManager(
+        _ central: CBCentralManager,
+        didDiscover peripheral: CBPeripheral,
+        advertisementData: [String: Any],
+        rssi RSSI: NSNumber
+    ) {
+        queue.async {
+            let localName = advertisementData[CBAdvertisementDataLocalNameKey] as? String
+            guard localName == self.targetLocalName else { return }
+
+            let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue ?? true
+            guard connectable else {
+                self.resumeConnect(with: TeslaError.maxBLEConnectionsExceeded)
+                return
+            }
+
+            central.stopScan()
+            self.peripheral = peripheral
+            peripheral.delegate = self
+            central.connect(peripheral, options: nil)
+        }
+    }
+
+    public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        queue.async {
+            peripheral.discoverServices([Self.vehicleServiceUUID])
+        }
+    }
+
+    public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        queue.async {
+            self.resumeConnect(with: error ?? TeslaError.notConnected)
+        }
+    }
+
+    public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        queue.async {
+            for continuation in self.writeContinuations {
+                continuation.resume(throwing: error ?? TeslaError.notConnected)
+            }
+            self.writeContinuations.removeAll()
+            self.receiveContinuation?.finish()
+            self.resumeConnect(with: error ?? TeslaError.notConnected)
+        }
+    }
+}
+
+extension BLEConnection: CBPeripheralDelegate {
+    public func peripheral(_ peripheral: CBPeripheral, didDiscoverServices error: Error?) {
+        queue.async {
+            if let error {
+                self.resumeConnect(with: error)
+                return
+            }
+            guard let service = peripheral.services?.first(where: { $0.uuid == Self.vehicleServiceUUID }) else {
+                self.resumeConnect(with: TeslaError.missingCharacteristic)
+                return
+            }
+            peripheral.discoverCharacteristics(
+                [Self.toVehicleCharacteristicUUID, Self.fromVehicleCharacteristicUUID],
+                for: service
+            )
+        }
+    }
+
+    public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
+        queue.async {
+            if let error {
+                self.resumeConnect(with: error)
+                return
+            }
+            for characteristic in service.characteristics ?? [] {
+                if characteristic.uuid == Self.toVehicleCharacteristicUUID {
+                    self.txCharacteristic = characteristic
+                } else if characteristic.uuid == Self.fromVehicleCharacteristicUUID {
+                    self.rxCharacteristic = characteristic
+                }
+            }
+            guard let rx = self.rxCharacteristic, self.txCharacteristic != nil else {
+                self.resumeConnect(with: TeslaError.missingCharacteristic)
+                return
+            }
+            self.blockLength = max(1, min(peripheral.maximumWriteValueLength(for: .withResponse), BLEFramer.maximumMessageSize))
+            peripheral.setNotifyValue(true, for: rx)
+        }
+    }
+
+    public func peripheral(
+        _ peripheral: CBPeripheral,
+        didUpdateNotificationStateFor characteristic: CBCharacteristic,
+        error: Error?
+    ) {
+        queue.async {
+            if let error {
+                self.resumeConnect(with: error)
+                return
+            }
+            guard characteristic.uuid == Self.fromVehicleCharacteristicUUID, characteristic.isNotifying else {
+                self.resumeConnect(with: TeslaError.missingCharacteristic)
+                return
+            }
+            self.resumeConnect()
+        }
+    }
+
+    public func peripheral(_ peripheral: CBPeripheral, didWriteValueFor characteristic: CBCharacteristic, error: Error?) {
+        queue.async {
+            guard !self.writeContinuations.isEmpty else { return }
+            let continuation = self.writeContinuations.removeFirst()
+            if let error {
+                continuation.resume(throwing: error)
+            } else {
+                continuation.resume()
+            }
+        }
+    }
+
+    public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
+        queue.async {
+            guard error == nil, characteristic.uuid == Self.fromVehicleCharacteristicUUID, let value = characteristic.value else {
+                return
+            }
+            do {
+                let messages = try self.framer.receive(value)
+                for message in messages {
+                    self.receiveContinuation?.yield(message)
+                }
+            } catch {
+                self.receiveContinuation?.finish()
+            }
+        }
+    }
+}
