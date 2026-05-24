@@ -1,7 +1,7 @@
 @preconcurrency import CoreBluetooth
 import Foundation
 
-public final class BLEConnection: NSObject, VehicleConnector {
+public final class BLEConnection: NSObject, VehicleConnector, @unchecked Sendable {
     public static let vehicleServiceUUID = CBUUID(string: "00000211-b2d1-43f0-9b88-960cebf8b91e")
     public static let toVehicleCharacteristicUUID = CBUUID(string: "00000212-b2d1-43f0-9b88-960cebf8b91e")
     public static let fromVehicleCharacteristicUUID = CBUUID(string: "00000213-b2d1-43f0-9b88-960cebf8b91e")
@@ -43,7 +43,7 @@ public final class BLEConnection: NSObject, VehicleConnector {
 
     public func connect(timeout: TimeInterval = 20) async throws {
         try await withTimeout(seconds: timeout) {
-            try await withCheckedThrowingContinuation { continuation in
+            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
                 self.queue.async {
                     self.connectContinuation = continuation
                     if self.central == nil {
@@ -97,7 +97,7 @@ public final class BLEConnection: NSObject, VehicleConnector {
     }
 
     private func write(_ chunk: Data) async throws {
-        try await withCheckedThrowingContinuation { continuation in
+        try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
             queue.async {
                 guard let peripheral = self.peripheral, let tx = self.txCharacteristic else {
                     continuation.resume(throwing: TeslaError.notConnected)

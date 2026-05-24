@@ -215,7 +215,7 @@ final class TeslaSession {
         signature.hmacPersonalizedData = hmacData
         message.signatureData = signature
         
-        var meta = try metadata(
+        let meta = try metadata(
             for: message,
             info: SessionMessageInfo(
                 counter: hmacData.counter,

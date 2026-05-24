@@ -22,7 +22,7 @@ enum ByteUtilities {
 extension Data {
     init(uint32BigEndian value: UInt32) {
         var bigEndian = value.bigEndian
-        self = withUnsafeBytes(of: &bigEndian) { Data($0) }
+        self = Swift.withUnsafeBytes(of: &bigEndian) { Data($0) }
     }
     
     mutating func appendUInt32BigEndian(_ value: UInt32) {
@@ -31,7 +31,7 @@ extension Data {
     
     mutating func appendUInt64BigEndian(_ value: UInt64) {
         var bigEndian = value.bigEndian
-        append(withUnsafeBytes(of: &bigEndian) { Data($0) })
+        append(Swift.withUnsafeBytes(of: &bigEndian) { Data($0) })
     }
     
     func sha1Digest() -> Data {

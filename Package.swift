@@ -35,5 +35,10 @@ let package = Package(
             name: "TeslaBLEKeyKitTests",
             dependencies: ["TeslaBLEKeyKit"]
         ),
+        .testTarget(
+            name: "TeslaBLEKeyKitXCTests",
+            dependencies: ["TeslaBLEKeyKit"],
+            path: "Tests/TeslaBLEKeyKitXCTests"
+        ),
     ]
 )
