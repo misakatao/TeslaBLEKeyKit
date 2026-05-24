@@ -164,4 +164,38 @@ struct VariableNonceAESGCMTests {
         let sealed = try gcm.seal(plaintext: Data("data".utf8), nonceMode: .standard12Byte)
         #expect(sealed.tag.count == 16)
     }
+
+    @Test("Custom nonce length round-trip")
+    func customNonceRoundTrip() throws {
+        let key = try ByteUtilities.randomData(count: 16)
+        let gcm = try VariableNonceAESGCM(key: key)
+        let plaintext = Data("custom nonce test".utf8)
+        let sealed = try gcm.seal(plaintext: plaintext, nonceMode: .custom(8))
+        #expect(sealed.nonce.count == 8)
+        let decrypted = try gcm.open(sealed)
+        #expect(decrypted == plaintext)
+    }
+
+    @Test("Explicit nonce round-trip")
+    func explicitNonceRoundTrip() throws {
+        let key = try ByteUtilities.randomData(count: 16)
+        let gcm = try VariableNonceAESGCM(key: key)
+        let plaintext = Data("explicit nonce".utf8)
+        let nonce = Data([0x01, 0x02, 0x03, 0x04, 0x05, 0x06])
+        let sealed = try gcm.seal(plaintext: plaintext, nonce: nonce)
+        #expect(sealed.nonce == nonce)
+        let decrypted = try gcm.open(sealed)
+        #expect(decrypted == plaintext)
+    }
+
+    @Test("Large plaintext (1024 bytes) round-trip")
+    func largePlaintextRoundTrip() throws {
+        let key = try ByteUtilities.randomData(count: 16)
+        let gcm = try VariableNonceAESGCM(key: key)
+        let plaintext = try ByteUtilities.randomData(count: 1024)
+        let sealed = try gcm.seal(plaintext: plaintext, nonceMode: .standard12Byte)
+        #expect(sealed.ciphertext.count == 1024)
+        let decrypted = try gcm.open(sealed)
+        #expect(decrypted == plaintext)
+    }
 }

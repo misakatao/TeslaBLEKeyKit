@@ -104,6 +104,12 @@ struct VehicleAdvertisementTests {
             _ = try vehicleLocalName(forVIN: "")
         }
     }
+
+    @Test("Known VIN produces exact local name")
+    func knownVINLocalName() throws {
+        let name = try vehicleLocalName(forVIN: "5YJ3E1EA0LF000000")
+        #expect(name == "S9f2bfe28ae1284efC")
+    }
 }
 
 // MARK: - TeslaError Tests
@@ -156,6 +162,39 @@ struct TeslaErrorTests {
             #expect(!error.errorDescription!.isEmpty)
         }
     }
+
+    @Test("protocolFault(0) mayHaveSucceeded is true")
+    func protocolFaultZeroMayHaveSucceeded() {
+        #expect(TeslaError.protocolFault(0).mayHaveSucceeded == true)
+    }
+
+    @Test("protocolFault(25) mayHaveSucceeded is true")
+    func protocolFault25MayHaveSucceeded() {
+        #expect(TeslaError.protocolFault(25).mayHaveSucceeded == true)
+    }
+
+    @Test("protocolFault(3) mayHaveSucceeded is false")
+    func protocolFault3NotMayHaveSucceeded() {
+        #expect(TeslaError.protocolFault(3).mayHaveSucceeded == false)
+    }
+
+    @Test("Temporary fault codes [1,2,5,6,11,15,17,20] are all isTemporary")
+    func temporaryFaultCodes() {
+        let temporaryCodes = [1, 2, 5, 6, 11, 15, 17, 20]
+        for code in temporaryCodes {
+            #expect(TeslaError.protocolFault(code).isTemporary == true, "Expected protocolFault(\(code)) to be temporary")
+        }
+    }
+
+    @Test("protocolFault(3) isTemporary is false")
+    func protocolFault3NotTemporary() {
+        #expect(TeslaError.protocolFault(3).isTemporary == false)
+    }
+
+    @Test("scanTimedOut shouldRetry is true")
+    func scanTimedOutShouldRetry() {
+        #expect(shouldRetry(TeslaError.scanTimedOut) == true)
+    }
 }
 
 // MARK: - MetadataBuilder Tests
@@ -193,6 +232,30 @@ struct MetadataBuilderTests {
             try meta.add(.signatureType, value: Data([0x01]))
         }
     }
+
+    @Test("nil value does not advance tag order")
+    func nilValueDoesNotAdvanceTagOrder() throws {
+        var meta = MetadataBuilder()
+        // Adding nil for .domain should not record the tag, so adding .domain with a real value after should succeed
+        try meta.add(.domain, value: nil)
+        // Now add .domain with a real value — should not throw
+        try meta.add(.domain, value: Data([0x01]))
+        // And adding a higher tag should also work
+        try meta.add(.personalization, value: Data([0x02]))
+        let checksum = meta.checksum()
+        #expect(checksum.count == 32)
+    }
+
+    @Test("addUInt32 encodes value as 4-byte big endian")
+    func addUInt32Encoding() throws {
+        var meta1 = MetadataBuilder()
+        try meta1.addUInt32(.signatureType, value: 0x01020304)
+
+        var meta2 = MetadataBuilder()
+        try meta2.add(.signatureType, value: Data([0x01, 0x02, 0x03, 0x04]))
+
+        #expect(meta1.checksum() == meta2.checksum())
+    }
 }
 
 // MARK: - AESGCMNonceMode Tests
@@ -212,5 +275,23 @@ struct AESGCMNonceModeTests {
     @Test("Custom length")
     func custom() {
         #expect(AESGCMNonceMode.custom(7).length == 7)
+    }
+
+    @Test("Equatable: same cases are equal")
+    func equatableSameCases() {
+        #expect(AESGCMNonceMode.standard12Byte == .standard12Byte)
+        #expect(AESGCMNonceMode.teslaBLE4Byte == .teslaBLE4Byte)
+        #expect(AESGCMNonceMode.custom(4) == .custom(4))
+    }
+
+    @Test("Equatable: custom with different lengths are not equal")
+    func equatableDifferentCustom() {
+        #expect(AESGCMNonceMode.custom(4) != .custom(8))
+    }
+
+    @Test("Equatable: different enum cases are not equal")
+    func equatableDifferentCases() {
+        #expect(AESGCMNonceMode.standard12Byte != .teslaBLE4Byte)
+        #expect(AESGCMNonceMode.standard12Byte != .custom(12))
     }
 }

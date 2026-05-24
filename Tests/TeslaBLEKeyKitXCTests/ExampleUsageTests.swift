@@ -173,6 +173,91 @@ final class ExampleUsageTests: XCTestCase {
         XCTAssertEqual(config.sessionTimeout, 60)
     }
 
+    // MARK: - BLE Scanner Lifecycle
+
+    func testBLEScannerLifecycle() {
+        // Demonstrate the minimal happy-path lifecycle: create → scan → stop.
+        let scanner = BLEScanner()
+        let stream = scanner.scan()
+        XCTAssertNotNil(stream)
+        scanner.stop()
+    }
+
+    // MARK: - Vehicle Configuration Usage
+
+    func testVehicleConfigurationUsage() {
+        // Demonstrate how callers choose a pre-built or custom configuration.
+        let standard = TeslaVehicleConfiguration.standard
+        XCTAssertEqual(standard.nonceMode, .standard12Byte)
+
+        let ble4 = TeslaVehicleConfiguration.fourByteNonceBLE
+        XCTAssertEqual(ble4.nonceMode, .teslaBLE4Byte)
+
+        let custom = TeslaVehicleConfiguration(
+            nonceMode: .custom(8),
+            commandTimeout: 20,
+            sessionTimeout: 30
+        )
+        XCTAssertEqual(custom.nonceMode.length, 8)
+        XCTAssertEqual(custom.commandTimeout, 20)
+        XCTAssertEqual(custom.sessionTimeout, 30)
+    }
+
+    // MARK: - Error Categories
+
+    func testAllErrorCategories() {
+        // Errors that may have already taken effect on the vehicle.
+        let mayHaveSucceeded: [TeslaError] = [
+            .timeout,
+            .protocolFault(0),
+            .protocolFault(25),
+        ]
+        for error in mayHaveSucceeded {
+            XCTAssertTrue(error.mayHaveSucceeded, "\(error) should report mayHaveSucceeded=true")
+        }
+
+        // Errors that are safe to retry immediately.
+        let temporary: [TeslaError] = [
+            .vehicleBusy,
+            .scanTimedOut,
+        ]
+        for error in temporary {
+            XCTAssertTrue(error.isTemporary, "\(error) should report isTemporary=true")
+        }
+
+        // Permanent, non-ambiguous failures.
+        let permanent: [TeslaError] = [
+            .keyNotPaired,
+            .invalidVIN,
+            .missingPrivateKey,
+            .notConnected,
+        ]
+        for error in permanent {
+            XCTAssertFalse(error.mayHaveSucceeded, "\(error) should not report mayHaveSucceeded")
+            XCTAssertFalse(error.isTemporary, "\(error) should not report isTemporary")
+        }
+    }
+
+    // MARK: - Protocol Fault Retry Decision
+
+    func testProtocolFaultRetryDecision() {
+        // According to TeslaError.isTemporary, these fault codes are retryable.
+        let retryableFaultCodes = [1, 2, 5, 6, 11, 15, 17, 20]
+        for code in retryableFaultCodes {
+            let error = TeslaError.protocolFault(code)
+            XCTAssertTrue(error.isTemporary, "protocolFault(\(code)) should be temporary")
+            XCTAssertFalse(error.mayHaveSucceeded, "protocolFault(\(code)) should not mayHaveSucceeded")
+            XCTAssertTrue(shouldRetry(error), "protocolFault(\(code)) should be retried")
+        }
+
+        // Codes not in the list must not be retried.
+        let nonRetryableFaultCodes = [0, 3, 4, 7, 25, 99]
+        for code in nonRetryableFaultCodes {
+            let error = TeslaError.protocolFault(code)
+            XCTAssertFalse(shouldRetry(error), "protocolFault(\(code)) should not be retried")
+        }
+    }
+
     // MARK: - Error Handling Patterns
 
     func testErrorRetryDecision() {

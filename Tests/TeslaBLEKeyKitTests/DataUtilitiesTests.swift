@@ -105,4 +105,25 @@ struct DataUtilitiesTests {
         let data = try ByteUtilities.randomData(count: 16)
         #expect(data != Data(repeating: 0, count: 16))
     }
+
+    @Test("Append uint64 big endian")
+    func appendUInt64BigEndian() {
+        var data = Data([0xFF])
+        data.appendUInt64BigEndian(0x0102030405060708)
+        #expect(data == Data([0xFF, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08]))
+    }
+
+    @Test("Append uint64 big endian zero")
+    func appendUInt64BigEndianZero() {
+        var data = Data()
+        data.appendUInt64BigEndian(0)
+        #expect(data == Data([0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]))
+    }
+
+    @Test("SHA1 known vector: 'abc'")
+    func sha1KnownVector() {
+        let data = Data("abc".utf8)
+        let digest = data.sha1Digest()
+        #expect(digest.hexString() == "a9993e364706816aba3e25717850c26c9cd0d89d")
+    }
 }
