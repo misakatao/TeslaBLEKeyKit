@@ -56,15 +56,18 @@ public final class TeslaVehicle {
     }
     
     public func connect() async throws {
+        Log.info("TeslaVehicle connecting, VIN=\(vin)")
         dispatcher.start()
     }
-    
+
     public func disconnect() {
+        Log.info("TeslaVehicle disconnecting, VIN=\(vin)")
         dispatcher.stop()
         connector.close()
     }
-    
+
     public func startVCSECSession() async throws {
+        Log.info("Starting VCSEC session")
         try await dispatcher.startSession(
             domain: .vehicleSecurity,
             timeout: configuration.sessionTimeout
@@ -128,6 +131,7 @@ public final class TeslaVehicle {
     }
     
     public func moveClosure(_ closure: TeslaClosure, action: VCSEC_ClosureMoveType_E) async throws {
+        Log.info("Moving closure: \(closure), action: \(action)")
         var request = VCSEC_ClosureMoveRequest()
         switch closure {
         case .trunk:
@@ -155,6 +159,7 @@ public final class TeslaVehicle {
         role: Keys_Role = .driver,
         formFactor: VCSEC_KeyFormFactor = .iosDevice
     ) async throws {
+        Log.info("Adding key to whitelist, role=\(role), formFactor=\(formFactor)")
         var permission = VCSEC_PermissionChange()
         permission.key.publicKeyRaw = publicKey
         permission.keyRole = role
@@ -199,6 +204,7 @@ public final class TeslaVehicle {
     }
     
     private func executeRKEAction(_ action: VCSEC_RKEAction_E) async throws {
+        Log.info("Executing RKE action: \(action)")
         var payload = VCSEC_UnsignedMessage()
         payload.rkeaction = action
         try await sendVCSECCommand(payload, auth: connector.preferredAuthMethod.internalAuthMethod) { response in
@@ -207,6 +213,7 @@ public final class TeslaVehicle {
             }
             return (true, nil)
         }
+        Log.info("RKE action completed: \(action)")
     }
     
     private func sendVCSECCommand(
@@ -236,6 +243,7 @@ public final class TeslaVehicle {
                 guard shouldRetry(error) else {
                     throw error
                 }
+                Log.debug("VCSEC command retrying:", Log.errorSummary(error))
                 try await Task.sleep(nanoseconds: UInt64(connector.retryInterval * 1_000_000_000))
             }
         }

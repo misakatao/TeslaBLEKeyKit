@@ -32,12 +32,13 @@ final class TeslaDispatcher {
     func start() {
         lock.withLock {
             guard listenTask == nil else { return }
+            Log.info("Dispatcher started")
             listenTask = Task { [weak self] in
                 await self?.listen()
             }
         }
     }
-    
+
     func stop() {
         let task = lock.withLock { () -> Task<Void, Never>? in
             let task = listenTask
@@ -45,6 +46,7 @@ final class TeslaDispatcher {
             return task
         }
         task?.cancel()
+        Log.info("Dispatcher stopped")
     }
     
     func startSession(domain: TeslaDomain, timeout: TimeInterval) async throws {
@@ -53,29 +55,36 @@ final class TeslaDispatcher {
         }
         let session = sessionState(for: domain, privateKey: privateKey)
         if session.isReady {
+            Log.debug("Session already ready for domain \(domain)")
             return
         }
-        
+
+        Log.info("Starting session for domain \(domain)")
         while true {
             let receiver = try await requestSessionInfo(domain: domain, publicKey: privateKey.publicKey)
             defer { receiver.close() }
-            
+
             do {
                 _ = try await receiver.messages().firstValue(timeout: connector.retryInterval)
                 try await session.waitUntilReady()
+                Log.info("Session established for domain \(domain)")
                 return
             } catch {
                 if !shouldRetry(error) {
                     if session.isReady {
+                        Log.info("Session established for domain \(domain)")
                         return
                     }
                     if (error as? TeslaError) == .timeout {
+                        Log.debug("Session handshake timeout, retrying domain \(domain)")
                         continue
                     }
+                    Log.error("Session setup failed for domain \(domain):", Log.errorSummary(error))
                     throw error
                 }
+                Log.debug("Session handshake retrying for domain \(domain)")
             }
-            
+
             try Task.checkCancellation()
             try await Task.sleep(nanoseconds: UInt64(connector.retryInterval * 1_000_000_000))
         }
@@ -89,13 +98,13 @@ final class TeslaDispatcher {
         guard lock.withLock({ listenTask != nil }) else {
             throw TeslaError.notConnected
         }
-        
+
         var command = message
         let domain = command.toDestination.domain
         guard domain != .broadcast else {
             throw TeslaError.malformedResponse("cannot send without a destination domain")
         }
-        
+
         let uuid = try ByteUtilities.randomData(count: Self.uuidLength)
         let routingAddress: Data
         var receiverUUID = Data()
@@ -105,10 +114,10 @@ final class TeslaDispatcher {
             routingAddress = address
             receiverUUID = uuid
         }
-        
+
         command.uuid = uuid
         command.fromDestination.routingAddress = routingAddress
-        
+
         if auth != .none {
             let session = lock.withLock { sessions[domain] }
             guard let session, session.isReady else {
@@ -120,16 +129,17 @@ final class TeslaDispatcher {
                 expiresIn: timeout > 0 ? timeout : Self.defaultExpiration
             )
         }
-        
+
         let requestID = lock.withLock { sessions[domain]?.requestID(for: command) } ?? Data()
         let key = ReceiverKey(address: routingAddress, uuid: receiverUUID, domain: domain)
         let receiver = ResponseReceiver(key: key, requestID: requestID, dispatcher: self)
         lock.withLock {
             handlers[key] = receiver
         }
-        
+
         do {
             let bytes = try command.serializedData()
+            Log.debug("Sending to domain \(domain), auth=\(auth), \(Log.dataSummary(bytes))")
             try await connector.send(bytes)
             return receiver
         } catch {
@@ -158,23 +168,25 @@ final class TeslaDispatcher {
                 let message = try UniversalMessage_RoutableMessage(serializedBytes: bytes)
                 process(message)
             } catch {
+                Log.debug("Failed to parse inbound message:", Log.errorSummary(error))
                 continue
             }
         }
     }
-    
+
     private func process(_ inbound: UniversalMessage_RoutableMessage) {
         var message = inbound
         guard let key = receiverKey(for: message) else {
             return
         }
-        
+
         guard let handler = lock.withLock({ handlers[key] }) else {
+            Log.debug("No handler for domain \(key.domain), dropping message")
             return
         }
-        
+
         checkForSessionUpdate(message: message, handler: handler)
-        
+
         do {
             if case .aesGcmResponseData? = message.signatureData.sigType {
                 let session = lock.withLock { sessions[key.domain] }
@@ -183,11 +195,13 @@ final class TeslaDispatcher {
                 }
                 let counter = try session.decrypt(message: &message, requestID: handler.requestID)
                 if !handler.antiReplay.update(counter) {
+                    Log.fault("Replayed response detected, counter=\(counter), domain \(key.domain)")
                     throw TeslaError.replayedResponse
                 }
             }
             handler.yield(message)
         } catch {
+            Log.error("Process response failed for domain \(key.domain):", Log.errorSummary(error))
             return
         }
     }
@@ -216,24 +230,27 @@ final class TeslaDispatcher {
             return
         }
         guard !handler.expired(maxLatency: connector.allowedLatency) else {
+            Log.debug("Session info arrived but handler expired")
             return
         }
         guard case .sessionInfoTag(let sessionInfoTag)? = message.signatureData.sigType else {
             return
         }
-        
+
         let domain = handler.key.domain
         guard let session = lock.withLock({ sessions[domain] }) else {
             return
         }
-        
+
         do {
             try session.processHello(
                 challenge: message.requestUuid,
                 encodedInfo: encodedInfo,
                 tag: sessionInfoTag.tag
             )
+            Log.info("Session info processed for domain \(domain)")
         } catch {
+            Log.error("Session info processing failed for domain \(domain):", Log.errorSummary(error))
             return
         }
     }

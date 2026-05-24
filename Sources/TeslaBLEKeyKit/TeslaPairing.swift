@@ -15,6 +15,7 @@ public final class TeslaPairing {
         role: Keys_Role = .driver,
         formFactor: VCSEC_KeyFormFactor = .iosDevice
     ) async throws {
+        Log.info("Requesting pairing, role=\(role), formFactor=\(formFactor)")
         var permission = VCSEC_PermissionChange()
         permission.key.publicKeyRaw = publicKey
         permission.keyRole = role
@@ -31,6 +32,7 @@ public final class TeslaPairing {
             if case .commandStatus(let status)? = response.subMessage,
                case .whitelistOperationStatus(let whitelist)? = status.subMessage {
                 let code = whitelist.whitelistOperationInformation.rawValue
+                if code != 0 { Log.error("Pairing whitelist error, code=\(code)") }
                 return (true, code == 0 ? nil : TeslaError.whitelistError(code))
             }
             if response.hasCommandStatus {
@@ -38,9 +40,11 @@ public final class TeslaPairing {
             }
             return (true, nil)
         }
+        Log.info("Pairing request completed")
     }
 
     public func vehicleStatus() async throws -> VCSEC_VehicleStatus {
+        Log.info("Requesting vehicle status (unauthenticated)")
         var request = VCSEC_InformationRequest()
         request.informationRequestType = .getStatus
 

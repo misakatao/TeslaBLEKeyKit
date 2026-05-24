@@ -86,19 +86,26 @@ public final class BLEConnection: NSObject, VehicleConnector, @unchecked Sendabl
     }
 
     public func connect(timeout: TimeInterval = 20) async throws {
-        try await withTimeout(seconds: timeout) {
-            try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
-                self.queue.async {
-                    self.connectContinuation = continuation
-                    if self.central == nil {
-                        self.central = CBCentralManager(delegate: self, queue: self.queue)
-                    } else if self.central?.state == .poweredOn {
-                        self.startScan()
-                    } else if let central = self.central {
-                        self.handleCentralState(central.state)
+        Log.info("Connecting to \(targetLocalName), timeout=\(timeout)s")
+        do {
+            try await withTimeout(seconds: timeout) {
+                try await withCheckedThrowingContinuation { (continuation: CheckedContinuation<Void, Error>) in
+                    self.queue.async {
+                        self.connectContinuation = continuation
+                        if self.central == nil {
+                            self.central = CBCentralManager(delegate: self, queue: self.queue)
+                        } else if self.central?.state == .poweredOn {
+                            self.startScan()
+                        } else if let central = self.central {
+                            self.handleCentralState(central.state)
+                        }
                     }
                 }
             }
+            Log.info("Connected to \(targetLocalName)")
+        } catch {
+            Log.error("Connect failed for \(targetLocalName):", Log.errorSummary(error))
+            throw error
         }
     }
 
@@ -107,6 +114,7 @@ public final class BLEConnection: NSObject, VehicleConnector, @unchecked Sendabl
     }
 
     public func send(_ message: Data) async throws {
+        Log.debug("TX \(Log.dataSummary(message)), blockLength=\(blockLength)")
         let framed = try BLEFramer.encode(message)
         var chunks: [Data] = []
         var offset = 0
@@ -122,6 +130,7 @@ public final class BLEConnection: NSObject, VehicleConnector, @unchecked Sendabl
     }
 
     public func close() {
+        Log.info("Closing BLE connection to \(targetLocalName)")
         queue.async {
             self.central?.stopScan()
             if let peripheral = self.peripheral {
@@ -161,6 +170,7 @@ public final class BLEConnection: NSObject, VehicleConnector, @unchecked Sendabl
     }
 
     private func handleCentralState(_ state: CBManagerState) {
+        Log.debug("Central state: \(state.rawValue)")
         switch state {
         case .poweredOn:
             startScan()
@@ -208,7 +218,9 @@ extension BLEConnection: CBCentralManagerDelegate {
             guard localName == self.targetLocalName else { return }
 
             let connectable = (advertisementData[CBAdvertisementDataIsConnectable] as? NSNumber)?.boolValue ?? true
+            Log.debug("Discovered \(localName ?? "nil"), RSSI=\(RSSI), connectable=\(connectable)")
             guard connectable else {
+                Log.error("Device not connectable (max BLE connections exceeded)")
                 self.resumeConnect(with: TeslaError.maxBLEConnectionsExceeded)
                 return
             }
@@ -221,18 +233,21 @@ extension BLEConnection: CBCentralManagerDelegate {
     }
 
     public func centralManager(_ central: CBCentralManager, didConnect peripheral: CBPeripheral) {
+        Log.debug("Peripheral connected, discovering services")
         queue.async {
             peripheral.discoverServices([Self.vehicleServiceUUID])
         }
     }
 
     public func centralManager(_ central: CBCentralManager, didFailToConnect peripheral: CBPeripheral, error: Error?) {
+        Log.error("Failed to connect peripheral:", error.map { Log.errorSummary($0) } ?? "unknown")
         queue.async {
             self.resumeConnect(with: error ?? TeslaError.notConnected)
         }
     }
 
     public func centralManager(_ central: CBCentralManager, didDisconnectPeripheral peripheral: CBPeripheral, error: Error?) {
+        Log.info("Peripheral disconnected:", error.map { Log.errorSummary($0) } ?? "clean")
         queue.async {
             for continuation in self.writeContinuations {
                 continuation.resume(throwing: error ?? TeslaError.notConnected)
@@ -265,6 +280,7 @@ extension BLEConnection: CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral, didDiscoverCharacteristicsFor service: CBService, error: Error?) {
         queue.async {
             if let error {
+                Log.error("Characteristic discovery failed:", Log.errorSummary(error))
                 self.resumeConnect(with: error)
                 return
             }
@@ -276,10 +292,12 @@ extension BLEConnection: CBPeripheralDelegate {
                 }
             }
             guard let rx = self.rxCharacteristic, self.txCharacteristic != nil else {
+                Log.error("Missing TX/RX characteristics")
                 self.resumeConnect(with: TeslaError.missingCharacteristic)
                 return
             }
             self.blockLength = max(1, min(peripheral.maximumWriteValueLength(for: .withResponse), BLEFramer.maximumMessageSize))
+            Log.debug("Characteristics ready, blockLength=\(self.blockLength)")
             peripheral.setNotifyValue(true, for: rx)
         }
     }
@@ -317,14 +335,17 @@ extension BLEConnection: CBPeripheralDelegate {
     public func peripheral(_ peripheral: CBPeripheral, didUpdateValueFor characteristic: CBCharacteristic, error: Error?) {
         queue.async {
             guard error == nil, characteristic.uuid == Self.fromVehicleCharacteristicUUID, let value = characteristic.value else {
+                if let error { Log.error("RX notification error:", Log.errorSummary(error)) }
                 return
             }
             do {
                 let messages = try self.framer.receive(value)
                 for message in messages {
+                    Log.debug("RX \(Log.dataSummary(message))")
                     self.receiveContinuation?.yield(message)
                 }
             } catch {
+                Log.error("Framer error:", Log.errorSummary(error))
                 self.receiveContinuation?.finish()
             }
         }

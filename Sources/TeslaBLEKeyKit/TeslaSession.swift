@@ -60,8 +60,10 @@ final class TeslaSession {
             encodedInfo: encodedInfo
         )
         guard expected.constantTimeEquals(tag) else {
+            Log.fault("Session info HMAC verification failed")
             throw TeslaError.crypto("session info HMAC is invalid")
         }
+        Log.info("Session created, epoch=\(Log.dataSummary(info.epoch)), counter=\(info.counter)")
     }
     
     func exportSessionInfo() throws -> Data {
@@ -92,9 +94,11 @@ final class TeslaSession {
             encodedInfo: encodedInfo
         )
         guard expected.constantTimeEquals(tag) else {
+            Log.fault("Session info update HMAC verification failed")
             throw TeslaError.crypto("session info HMAC is invalid")
         }
         let info = try Signatures_SessionInfo(serializedBytes: encodedInfo)
+        Log.debug("Updating session info, epoch=\(Log.dataSummary(info.epoch)), counter=\(info.counter)")
         try updateSessionInfo(info)
     }
     
@@ -103,6 +107,7 @@ final class TeslaSession {
         method: AuthMethod,
         expiresIn: TimeInterval
     ) throws {
+        Log.debug("Authorizing message, method=\(method), counter=\(counter)")
         switch method {
         case .none:
             return
@@ -120,6 +125,7 @@ final class TeslaSession {
         guard case .aesGcmResponseData(let gcmInfo)? = message.signatureData.sigType else {
             throw TeslaError.crypto("missing AES-GCM response data")
         }
+        Log.debug("Decrypting response, counter=\(gcmInfo.counter)")
         let authenticatedData = try responseMetadata(
             message: message,
             requestID: requestID,
@@ -349,6 +355,7 @@ final class DomainSessionState {
                     tag: tag,
                     nonceMode: nonceMode
                 )
+                Log.info("Domain session initialized, \(readyContinuations.count) waiter(s) resumed")
                 continuations = readyContinuations
                 readyContinuations.removeAll()
             }
