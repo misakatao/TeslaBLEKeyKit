@@ -7,7 +7,8 @@ public final class BLEConnection: NSObject, VehicleConnector, @unchecked Sendabl
     public static let toVehicleCharacteristicUUID = CBUUID(string: "00000212-b2d1-43f0-9b88-960cebf8b91e")
     public static let fromVehicleCharacteristicUUID = CBUUID(string: "00000213-b2d1-43f0-9b88-960cebf8b91e")
 
-    public let vin: String
+    public var vin: String
+    public let localName: String
     public let retryInterval: TimeInterval
     public let allowedLatency: TimeInterval
     public let preferredAuthMethod: ConnectorAuthMethod = .aesGCM
@@ -31,9 +32,51 @@ public final class BLEConnection: NSObject, VehicleConnector, @unchecked Sendabl
         allowedLatency: TimeInterval = 4
     ) throws {
         self.vin = vin
+        self.targetLocalName = try vehicleLocalName(forVIN: vin)
+        self.localName = self.targetLocalName
         self.retryInterval = retryInterval
         self.allowedLatency = allowedLatency
-        self.targetLocalName = try vehicleLocalName(forVIN: vin)
+        super.init()
+        self.receiveStreamStorage = AsyncStream { [weak self] continuation in
+            self?.queue.async {
+                self?.receiveContinuation = continuation
+            }
+        }
+    }
+
+    public init(
+        advertisement: VehicleAdvertisement,
+        retryInterval: TimeInterval = 1,
+        allowedLatency: TimeInterval = 4
+    ) {
+        self.vin = advertisement.localName
+        self.localName = advertisement.localName
+        self.targetLocalName = advertisement.localName
+        self.retryInterval = retryInterval
+        self.allowedLatency = allowedLatency
+        super.init()
+        self.receiveStreamStorage = AsyncStream { [weak self] continuation in
+            self?.queue.async {
+                self?.receiveContinuation = continuation
+            }
+        }
+    }
+
+    public init(
+        localName: String,
+        retryInterval: TimeInterval = 1,
+        allowedLatency: TimeInterval = 4
+    ) throws {
+        guard localName.count == 18,
+              localName.hasPrefix("S"),
+              localName.hasSuffix("C") else {
+            throw TeslaError.invalidVIN
+        }
+        self.vin = localName
+        self.localName = localName
+        self.targetLocalName = localName
+        self.retryInterval = retryInterval
+        self.allowedLatency = allowedLatency
         super.init()
         self.receiveStreamStorage = AsyncStream { [weak self] continuation in
             self?.queue.async {

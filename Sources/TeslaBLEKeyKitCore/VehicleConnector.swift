@@ -1,7 +1,8 @@
 import Foundation
 
 public protocol VehicleConnector: AnyObject {
-    var vin: String { get }
+    var vin: String { get set }
+    var localName: String { get }
     var retryInterval: TimeInterval { get }
     var allowedLatency: TimeInterval { get }
     var preferredAuthMethod: ConnectorAuthMethod { get }
