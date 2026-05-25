@@ -5,10 +5,13 @@ A pure Swift library for communicating with Tesla vehicles over BLE (Bluetooth L
 ## Features
 
 - **BLE Scanning** — discover nearby Tesla vehicles via `BLEScanner` with `AsyncStream` support
-- **BLE Connection** — connect to a specific vehicle by VIN via `BLEConnection`
+- **BLE Connection** — connect to a specific vehicle by VIN or VIN-free pairing via `BLEConnection`
 - **VCSEC Protocol** — lock, unlock, trunk/frunk control, remote drive, and more
+- **Vehicle Commands** — climate, charging, driving, media, sunroof, windows, sentry mode, and more via CarServer protocol
+- **Vehicle Data** — query charge state, climate state, drive state, tire pressure, and more
 - **Session Authentication** — P256 ECDH key agreement with AES-GCM / HMAC-SHA256
 - **Key Management** — generate key pairs and add keys to the vehicle whitelist
+- **Unified Logging** — structured logging via `os.Logger` with notification-based log forwarding
 - **Async/Await** — modern structured concurrency throughout
 - **Modular Architecture** — use only the modules you need (Core, Crypto, BLE, or all-in-one)
 
@@ -19,10 +22,10 @@ A pure Swift library for communicating with Tesla vehicles over BLE (Bluetooth L
 | iOS | 16.0 |
 | macOS | 13.0 |
 | watchOS | 9.0 |
-| tvOS | 16.0 |
-| visionOS | 1.0 |
 
 > **Note:** BLE scanning and connection require CoreBluetooth and Bluetooth LE capable hardware.
+
+**Swift Compatibility:** 5.9, 5.10, 6.0
 
 ## Installation
 
@@ -42,7 +45,7 @@ If you only need specific functionality, you can depend on individual modules:
 
 | Module | Contents |
 |--------|----------|
-| `TeslaBLEKeyKitCore` | Error types, data utilities, Protobuf definitions, `VehicleConnector` protocol |
+| `TeslaBLEKeyKitCore` | Error types, data utilities, Protobuf definitions, logging, `VehicleConnector` protocol |
 | `TeslaBLEKeyKitCrypto` | AES-128, AES-GCM, P-256 key management |
 | `TeslaBLEKeyKitBLE` | BLE framing, scanning, CoreBluetooth connection |
 | `TeslaBLEKeyKit` | Full library (re-exports all modules above) |
@@ -84,8 +87,10 @@ import TeslaBLEKeyKit
 // 1. Generate or load a private key
 let privateKey = TeslaPrivateKey.generate()
 
-// 2. Create a BLE connection
+// 2. Create a BLE connection (by VIN or VIN-free)
 let connection = try BLEConnection(vin: "5YJ3E1EA0LF000000")
+// Or connect without VIN (pairs with the nearest vehicle):
+// let connection = try BLEConnection()
 try await connection.connect()
 
 // 3. Create a vehicle instance
@@ -132,6 +137,8 @@ let restored = try TeslaPrivateKey(rawRepresentation: raw)
 
 ## Available Commands
 
+### VCSEC Commands
+
 | Command | Method |
 |---------|--------|
 | Wake | `wakeVehicle()` |
@@ -147,6 +154,68 @@ let restored = try TeslaPrivateKey(rawRepresentation: raw)
 | Move Closure | `moveClosure(_:action:)` |
 | Add Key | `addKeyToWhitelist(publicKey:role:formFactor:)` |
 | Raw VCSEC | `sendRawVCSEC(payload:authenticated:)` |
+
+### Climate
+
+| Command | Method |
+|---------|--------|
+| Auto Climate On/Off | `setClimateAuto(enabled:)` |
+| Max Preconditioning | `setPreconditioningMax(enabled:)` |
+| Steering Wheel Heater | `setSteeringWheelHeater(enabled:)` |
+| Set Temperature | `setTemperature(driverCelsius:passengerCelsius:)` |
+| Bioweapon Mode | `setBioweaponMode(enabled:)` |
+| Climate Keeper | `setClimateKeeper(mode:)` |
+| Cabin Overheat Protection | `setCabinOverheatProtection(enabled:fanOnly:)` |
+
+### Charging
+
+| Command | Method |
+|---------|--------|
+| Set Charge Limit | `setChargeLimit(percent:)` |
+| Start/Stop Charging | `startCharging()` / `stopCharging()` |
+| Set Charging Amps | `setChargingAmps(_:)` |
+| Open/Close Charge Port | `openChargePort()` / `closeChargePort()` |
+
+### Driving
+
+| Command | Method |
+|---------|--------|
+| Set Speed Limit | `setSpeedLimit(mph:)` |
+| Activate/Deactivate Speed Limit | `activateSpeedLimit(pin:)` / `deactivateSpeedLimit(pin:)` |
+| Clear Speed Limit Pin | `clearSpeedLimitPin(pin:)` |
+
+### Vehicle Control
+
+| Command | Method |
+|---------|--------|
+| Flash Lights | `flashLights()` |
+| Honk Horn | `honkHorn()` |
+| Sentry Mode | `setSentryMode(enabled:)` |
+| Valet Mode | `setValetMode(enabled:password:)` |
+| Reset Valet Pin | `resetValetPin()` |
+| Sunroof | `controlSunroof(_:)` |
+| Windows | `controlWindows(_:)` |
+| Trigger Homelink | `triggerHomelink(latitude:longitude:)` |
+
+### Media
+
+| Command | Method |
+|---------|--------|
+| Toggle Playback | `mediaTogglePlayback()` |
+| Next/Previous Track | `mediaNextTrack()` / `mediaPreviousTrack()` |
+| Next/Previous Favorite | `mediaNextFavorite()` / `mediaPreviousFavorite()` |
+| Adjust Volume | `mediaAdjustVolume(delta:)` |
+| Set Volume | `mediaSetVolume(absolute:)` |
+
+### Data & Misc
+
+| Command | Method |
+|---------|--------|
+| Get Vehicle Data | `getVehicleData()` |
+| Nearby Charging Sites | `getNearbyChargingSites(radius:count:)` |
+| Set Vehicle Name | `setVehicleName(_:)` |
+| Erase User Data | `eraseUserData(reason:)` |
+| Low Power Mode | `setLowPowerMode(enabled:)` |
 
 ## Configuration
 
@@ -215,22 +284,37 @@ class MockConnector: VehicleConnector {
 }
 ```
 
+## Logging
+
+TeslaBLEKeyKit uses Apple's unified logging system (`os.Logger`) for structured diagnostics across BLE, session, and command flows.
+
+```swift
+// Observe error-level and above logs via NotificationCenter
+NotificationCenter.default.addObserver(
+    forName: .teslaBLEKeyLog,
+    object: nil,
+    queue: .main
+) { notification in
+    let message = notification.userInfo?["message"] as? String ?? ""
+    print("TeslaBLE: \(message)")
+}
+```
+
 ## Project Structure
 
 ```
 Sources/
-├── TeslaBLEKeyKitCore/       Core utilities, errors, Protobuf types
+├── TeslaBLEKeyKitCore/       Core utilities, errors, logging, Protobuf types
 ├── TeslaBLEKeyKitCrypto/     AES-128, AES-GCM, P-256 key management
 ├── TeslaBLEKeyKitBLE/        BLE framing, scanning, connection
-├── TeslaBLEKeyKit/           Session, dispatcher, vehicle commands
-└── TeslaBLEKeyKitExample/    Runnable example (swift run TeslaBLEKeyKitExample)
+└── TeslaBLEKeyKit/           Session, dispatcher, vehicle commands
+Example/
+└── TeslaBLEKeyKitExample/    Xcode example project
 ```
 
 ## Running the Example
 
-```bash
-swift run TeslaBLEKeyKitExample
-```
+Open `Example/TeslaBLEKeyKitExample.xcodeproj` in Xcode, select a target device with Bluetooth support, and run.
 
 ## Testing
 
