@@ -1,5 +1,7 @@
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 extension TeslaVehicle {
     public func setSpeedLimit(mph: Double) async throws {

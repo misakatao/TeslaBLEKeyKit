@@ -1,5 +1,7 @@
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 final class ResponseReceiver {
     let key: ReceiverKey

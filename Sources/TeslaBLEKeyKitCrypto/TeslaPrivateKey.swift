@@ -1,6 +1,8 @@
 import CryptoKit
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 public struct TeslaPrivateKey: Sendable {
     private let key: P256.KeyAgreement.PrivateKey

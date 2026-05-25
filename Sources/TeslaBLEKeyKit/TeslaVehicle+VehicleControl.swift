@@ -1,5 +1,7 @@
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 public enum SunroofAction: Sendable {
     case vent

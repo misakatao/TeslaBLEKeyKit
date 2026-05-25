@@ -1,5 +1,7 @@
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 public enum AESGCMNonceMode: Sendable, Equatable {
     /// Current Tesla vehicle-command documentation and Go implementation use a random 12-byte nonce.

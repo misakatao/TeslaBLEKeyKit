@@ -1,6 +1,8 @@
 @preconcurrency import CoreBluetooth
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 public final class BLEScanner: NSObject, @unchecked Sendable {
     private let queue = DispatchQueue(label: "TeslaBLEKeyKit.BLEScanner")

@@ -1,5 +1,7 @@
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 public struct AES128: Sendable {
     private static let sBox: [UInt8] = [

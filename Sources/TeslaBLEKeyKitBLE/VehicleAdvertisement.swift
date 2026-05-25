@@ -1,5 +1,7 @@
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 public struct VehicleAdvertisement: Sendable, Equatable {
     public let localName: String

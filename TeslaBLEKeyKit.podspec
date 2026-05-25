@@ -17,35 +17,13 @@ Pod::Spec.new do |s|
   s.watchos.deployment_target = '9.0'
   s.swift_versions = ['5.9', '5.10', '6.0']
 
+  s.source_files = 'Sources/**/*.swift'
+  s.exclude_files = 'Sources/**/Protos/**'
+  s.resource_bundles = {
+    'TeslaBLEKeyKit' => ['Sources/TeslaBLEKeyKit/PrivacyInfo.xcprivacy']
+  }
+
+  s.frameworks = 'CoreBluetooth', 'Security'
+
   s.dependency 'SwiftProtobuf', '~> 1.28'
-
-  s.subspec 'Core' do |core|
-    core.source_files = 'Sources/TeslaBLEKeyKitCore/**/*.swift'
-    core.exclude_files = 'Sources/TeslaBLEKeyKitCore/Protos/**'
-  end
-
-  s.subspec 'Crypto' do |crypto|
-    crypto.source_files = 'Sources/TeslaBLEKeyKitCrypto/**/*.swift'
-    crypto.dependency 'TeslaBLEKeyKit/Core'
-  end
-
-  s.subspec 'BLE' do |ble|
-    ble.source_files = 'Sources/TeslaBLEKeyKitBLE/**/*.swift'
-    ble.dependency 'TeslaBLEKeyKit/Core'
-    ble.frameworks = 'CoreBluetooth'
-  end
-
-  s.subspec 'Kit' do |kit|
-    kit.source_files = 'Sources/TeslaBLEKeyKit/**/*.swift'
-    kit.exclude_files = 'Sources/TeslaBLEKeyKit/Protos/**'
-    kit.resource_bundles = {
-      'TeslaBLEKeyKit' => ['Sources/TeslaBLEKeyKit/PrivacyInfo.xcprivacy']
-    }
-    kit.dependency 'TeslaBLEKeyKit/Core'
-    kit.dependency 'TeslaBLEKeyKit/Crypto'
-    kit.dependency 'TeslaBLEKeyKit/BLE'
-    kit.frameworks = 'Security'
-  end
-
-  s.default_subspec = 'Kit'
 end

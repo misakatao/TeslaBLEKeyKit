@@ -1,6 +1,8 @@
 @preconcurrency import CoreBluetooth
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 public final class BLEConnection: NSObject, VehicleConnector, @unchecked Sendable {
     public static let vehicleServiceUUID = CBUUID(string: "00000211-b2d1-43f0-9b88-960cebf8b91e")

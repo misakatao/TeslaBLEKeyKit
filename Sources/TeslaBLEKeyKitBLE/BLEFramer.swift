@@ -1,5 +1,7 @@
 import Foundation
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
 
 public struct BLEFramer {
     public static let maximumMessageSize = 1024

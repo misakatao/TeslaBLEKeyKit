@@ -1,7 +1,11 @@
 import Foundation
 import SwiftProtobuf
+#if !COCOAPODS
 import TeslaBLEKeyKitCore
+#endif
+#if !COCOAPODS
 import TeslaBLEKeyKitCrypto
+#endif
 
 public struct TeslaVehicleConfiguration: Sendable, Equatable {
     public var nonceMode: AESGCMNonceMode
