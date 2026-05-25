@@ -10,3 +10,6 @@ public enum TeslaBLEKeyKit {
 
 public typealias TeslaVCSECStatus = VCSEC_VehicleStatus
 public typealias TeslaVCSECResponse = VCSEC_FromVCSECMessage
+public typealias TeslaCarServerResponse = CarServer_Response
+public typealias TeslaVehicleData = CarServer_VehicleData
+public typealias TeslaVehicleAction = CarServer_VehicleAction

@@ -66,6 +66,56 @@ public final class TeslaVehicle {
         connector.close()
     }
 
+    public func startInfotainmentSession() async throws {
+        Log.info("Starting Infotainment session")
+        try await dispatcher.startSession(
+            domain: .infotainment,
+            timeout: configuration.sessionTimeout
+        )
+    }
+
+    @discardableResult
+    public func sendVehicleAction(_ action: CarServer_VehicleAction) async throws -> CarServer_Response {
+        var carAction = CarServer_Action()
+        carAction.vehicleAction = action
+        let bytes = try carAction.serializedData()
+        return try await getInfotainmentResult(payload: bytes, auth: connector.preferredAuthMethod.internalAuthMethod)
+    }
+
+    private func getInfotainmentResult(
+        payload: Data,
+        auth: AuthMethod
+    ) async throws -> CarServer_Response {
+        while true {
+            do {
+                let receiver = try await getReceiver(
+                    domain: .infotainment,
+                    payload: payload,
+                    auth: auth
+                )
+                defer { receiver.close() }
+                return try await readInfotainmentResponse(receiver: receiver)
+            } catch {
+                guard shouldRetry(error) else {
+                    throw error
+                }
+                Log.debug("Infotainment command retrying:", Log.errorSummary(error))
+                try await Task.sleep(nanoseconds: UInt64(connector.retryInterval * 1_000_000_000))
+            }
+        }
+    }
+
+    private func readInfotainmentResponse(
+        receiver: ResponseReceiver
+    ) async throws -> CarServer_Response {
+        try await withTimeout(seconds: configuration.commandTimeout) {
+            for await message in receiver.messages() {
+                return try carServerResponse(from: message)
+            }
+            throw TeslaError.notConnected
+        }
+    }
+
     public func startVCSECSession() async throws {
         Log.info("Starting VCSEC session")
         try await dispatcher.startSession(

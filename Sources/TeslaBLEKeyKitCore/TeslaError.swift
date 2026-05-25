@@ -29,6 +29,7 @@ public enum TeslaError: LocalizedError, TeslaProtocolError, Equatable {
     case protocolFault(Int)
     case vcsecError(String)
     case whitelistError(Int)
+    case infotainmentError(String)
     case crypto(String)
     case timeout
     
@@ -76,6 +77,8 @@ public enum TeslaError: LocalizedError, TeslaProtocolError, Equatable {
             return "VCSEC could not execute command: \(details)."
         case .whitelistError(let code):
             return "Whitelist operation failed with code \(code)."
+        case .infotainmentError(let details):
+            return "Infotainment command failed: \(details)."
         case .crypto(let details):
             return "Cryptographic operation failed: \(details)."
         case .timeout:

@@ -79,3 +79,25 @@ extension VCSEC_FromVCSECMessage {
         return false
     }
 }
+
+func carServerResponse(from message: UniversalMessage_RoutableMessage) throws -> CarServer_Response {
+    if let error = protocolError(from: message) {
+        throw error
+    }
+
+    guard case .protobufMessageAsBytes(let payload)? = message.payload else {
+        return CarServer_Response()
+    }
+
+    let response = try CarServer_Response(serializedBytes: payload)
+    if response.hasActionStatus && response.actionStatus.result == .rror {
+        let reason: String
+        if response.actionStatus.hasResultReason, case .plainText(let text)? = response.actionStatus.resultReason.reason {
+            reason = text
+        } else {
+            reason = "unknown error"
+        }
+        throw TeslaError.infotainmentError(reason)
+    }
+    return response
+}
