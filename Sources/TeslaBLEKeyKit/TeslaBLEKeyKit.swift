@@ -1,6 +1,8 @@
+#if !COCOAPODS
 @_exported import TeslaBLEKeyKitCore
 @_exported import TeslaBLEKeyKitCrypto
 @_exported import TeslaBLEKeyKitBLE
+#endif
 
 import Foundation
 
