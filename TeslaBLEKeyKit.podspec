@@ -15,15 +15,13 @@ Pod::Spec.new do |s|
   s.ios.deployment_target = '16.0'
   s.osx.deployment_target = '13.0'
   s.watchos.deployment_target = '9.0'
-  s.tvos.deployment_target = '16.0'
-  s.visionos.deployment_target = '1.0'
   s.swift_versions = ['5.9', '5.10', '6.0']
 
   s.source_files = 'Sources/**/*.swift'
-  s.exclude_files = [
-    'Sources/TeslaBLEKeyKit/Protos/**',
-    'Sources/TeslaBLEKeyKitExample/**'
-  ]
+  s.exclude_files = 'Sources/**/Protos/**'
+  s.resource_bundles = {
+    'TeslaBLEKeyKit' => ['Sources/TeslaBLEKeyKit/PrivacyInfo.xcprivacy']
+  }
 
   s.frameworks = 'CoreBluetooth', 'Security'
 

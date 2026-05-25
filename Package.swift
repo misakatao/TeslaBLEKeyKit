@@ -8,8 +8,6 @@ let package = Package(
         .iOS(.v16),
         .macOS(.v13),
         .watchOS(.v9),
-        .tvOS(.v16),
-        .visionOS(.v1),
     ],
     products: [
         .library(
@@ -28,10 +26,6 @@ let package = Package(
             name: "TeslaBLEKeyKitBLE",
             targets: ["TeslaBLEKeyKitBLE"]
         ),
-        .executable(
-            name: "TeslaBLEKeyKitExample",
-            targets: ["TeslaBLEKeyKitExample"]
-        ),
     ],
     dependencies: [
         .package(url: "https://github.com/apple/swift-protobuf.git", from: "1.28.2"),
@@ -41,6 +35,9 @@ let package = Package(
             name: "TeslaBLEKeyKitCore",
             dependencies: [
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
+            ],
+            exclude: [
+                "Protos",
             ]
         ),
         .target(
@@ -51,7 +48,7 @@ let package = Package(
             name: "TeslaBLEKeyKitBLE",
             dependencies: ["TeslaBLEKeyKitCore"],
             linkerSettings: [
-                .linkedFramework("CoreBluetooth", .when(platforms: [.iOS, .macOS, .tvOS, .watchOS, .visionOS])),
+                .linkedFramework("CoreBluetooth", .when(platforms: [.iOS, .macOS, .watchOS])),
             ]
         ),
         .target(
@@ -62,16 +59,12 @@ let package = Package(
                 "TeslaBLEKeyKitBLE",
                 .product(name: "SwiftProtobuf", package: "swift-protobuf"),
             ],
-            exclude: [
-                "Protos",
+            resources: [
+                .copy("PrivacyInfo.xcprivacy"),
             ],
             linkerSettings: [
                 .linkedFramework("Security"),
             ]
-        ),
-        .executableTarget(
-            name: "TeslaBLEKeyKitExample",
-            dependencies: ["TeslaBLEKeyKit"]
         ),
         .testTarget(
             name: "TeslaBLEKeyKitTests",
