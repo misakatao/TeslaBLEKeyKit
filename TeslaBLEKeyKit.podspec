@@ -14,8 +14,7 @@ Pod::Spec.new do |s|
 
   s.ios.deployment_target = '16.0'
   s.osx.deployment_target = '13.0'
-  s.watchos.deployment_target = '9.0'
-  s.swift_versions = ['5.9', '5.10', '6.0']
+  s.swift_versions = ['5.9', '5.10']
 
   s.source_files = 'Sources/**/*.swift'
   s.exclude_files = 'Sources/**/Protos/**'
